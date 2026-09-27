@@ -320,7 +320,15 @@
     let turmaAtual = "5º Ano A";
     let alunos = [];
     let datasColunas = [];
-    let listaAlunosGlobais = [];
+
+    // Função para identificar o bimestre baseado no mês
+    function getBimestreInfo(anoMes) {
+        const mes = parseInt(anoMes.split('-')[1]);
+        if (mes <= 3) return { id: "B1", nome: "1º Bimestre" };
+        if (mes <= 6) return { id: "B2", nome: "2º Bimestre" };
+        if (mes <= 9) return { id: "B3", nome: "3º Bimestre" };
+        return { id: "B4", nome: "4º Bimestre" };
+    }
 
     function setStatus(msg, cor = "#64748b") {
         const el = document.getElementById('status-sync');
@@ -353,64 +361,108 @@
         return !(turmaAtual === "5º Ano A" || turmaAtual === "5º Ano B");
     }
 
-    // Carregar dados direto da nuvem
+    // Carregar dados estruturados (Lista Global, Presenças do Mês, Notas do Bimestre)
     async function carregarDados() {
         turmaAtual = document.getElementById('turma-referencia').value;
         mesAtual = document.getElementById('mes-referencia').value;
         if (!mesAtual) return;
 
-        setStatus("Sincronizando com a nuvem...", "#d68102");
-        const idRegistro = `${turmaAtual}_${mesAtual}`;
+        setStatus("A sincronizar com a nuvem...", "#d68102");
+        
+        const anoAtual = mesAtual.split('-')[0];
+        const bimInfo = getBimestreInfo(mesAtual);
+
+        const idLista = `${turmaAtual}_alunos_globais`;
+        const idMes = `${turmaAtual}_${mesAtual}`;
+        const idBimestre = `${turmaAtual}_${anoAtual}_${bimInfo.id}`;
 
         try {
-            const { data, error } = await db
-                .from('diarios')
-                .select('*')
-                .eq('id', idRegistro)
-                .maybeSingle();
+            const [resLista, resMes, resBimestre] = await Promise.all([
+                db.from('diarios').select('*').eq('id', idLista).maybeSingle(),
+                db.from('diarios').select('*').eq('id', idMes).maybeSingle(),
+                db.from('diarios').select('*').eq('id', idBimestre).maybeSingle()
+            ]);
 
-            if (error) throw error;
+            if (resLista.error) throw resLista.error;
+            if (resMes.error) throw resMes.error;
+            if (resBimestre.error) throw resBimestre.error;
 
-            if (data) {
-                datasColunas = data.datas_colunas || new Array(DIAS_LETIVOS).fill('');
-                alunos = data.alunos || [];
-            } else {
-                datasColunas = new Array(DIAS_LETIVOS).fill('');
-                alunos = listaAlunosGlobais.map(nome => ({
-                    nome: nome,
-                    presencas: new Array(DIAS_LETIVOS).fill(false),
-                    notas: new Array(8).fill('')
-                }));
+            let nomesGlobais = resLista.data?.alunos?.map(a => a.nome) || [];
+            let dadosMes = resMes.data?.alunos || [];
+            let dadosBimestre = resBimestre.data?.alunos || [];
+
+            // Compatibilidade com dados antigos salvos anteriormente
+            if (nomesGlobais.length === 0 && dadosMes.length > 0) {
+                nomesGlobais = dadosMes.map(a => a.nome);
+                if (dadosBimestre.length === 0) dadosBimestre = dadosMes; 
             }
 
-            atualizarTituloMes();
+            datasColunas = resMes.data?.datas_colunas || new Array(DIAS_LETIVOS).fill('');
+            alunos = [];
+
+            // Mesclar dados
+            nomesGlobais.forEach(nome => {
+                const alunoMes = dadosMes.find(a => a.nome === nome);
+                const alunoBim = dadosBimestre.find(a => a.nome === nome);
+
+                alunos.push({
+                    nome: nome,
+                    presencas: alunoMes?.presencas || new Array(DIAS_LETIVOS).fill(false),
+                    notas: alunoBim?.notas || new Array(8).fill('')
+                });
+            });
+
+            atualizarTituloMes(bimInfo.nome);
             renderizarCabecalho();
             renderizarTabela();
             setStatus("● Dados sincronizados na nuvem", "#10b981");
         } catch (err) {
             console.error(err);
-            setStatus("Erro ao conectar ao Supabase (verifique as permissões SQL)", "#ef4444");
+            setStatus("Erro ao conectar ao Supabase", "#ef4444");
         }
     }
 
-    // Salvar dados na nuvem automaticamente
+    // Salvar separando Listas, Presenças (Mês) e Notas (Bimestre)
     async function salvarDados() {
-        const idRegistro = `${turmaAtual}_${mesAtual}`;
-        setStatus("Salvando na nuvem...", "#d68102");
+        const anoAtual = mesAtual.split('-')[0];
+        const bimInfo = getBimestreInfo(mesAtual);
+
+        const idLista = `${turmaAtual}_alunos_globais`;
+        const idMes = `${turmaAtual}_${mesAtual}`;
+        const idBimestre = `${turmaAtual}_${anoAtual}_${bimInfo.id}`;
+
+        setStatus("A guardar na nuvem...", "#d68102");
 
         try {
-            const { error } = await db
-                .from('diarios')
-                .upsert({
-                    id: idRegistro,
-                    turma: turmaAtual,
-                    mes: mesAtual,
-                    datas_colunas: datasColunas,
-                    alunos: alunos,
-                    updated_at: new Date().toISOString()
-                });
+            const payloadLista = {
+                id: idLista, turma: turmaAtual, mes: 'GLOBAL',
+                alunos: alunos.map(a => ({ nome: a.nome })),
+                updated_at: new Date().toISOString()
+            };
 
-            if (error) throw error;
+            const payloadMes = {
+                id: idMes, turma: turmaAtual, mes: mesAtual,
+                datas_colunas: datasColunas,
+                alunos: alunos.map(a => ({ nome: a.nome, presencas: a.presencas })),
+                updated_at: new Date().toISOString()
+            };
+
+            const payloadBimestre = {
+                id: idBimestre, turma: turmaAtual, mes: `BIMESTRE_${bimInfo.id}`,
+                alunos: alunos.map(a => ({ nome: a.nome, notas: a.notas })),
+                updated_at: new Date().toISOString()
+            };
+
+            const [errLista, errMes, errBim] = await Promise.all([
+                db.from('diarios').upsert(payloadLista),
+                db.from('diarios').upsert(payloadMes),
+                db.from('diarios').upsert(payloadBimestre)
+            ]);
+
+            if (errLista.error) throw errLista.error;
+            if (errMes.error) throw errMes.error;
+            if (errBim.error) throw errBim.error;
+
             setStatus("● Alterações salvas na nuvem", "#10b981");
         } catch (err) {
             console.error(err);
@@ -421,11 +473,12 @@
     function mudarTurma() { carregarDados(); }
     function mudarMes() { if (document.getElementById('mes-referencia').value) carregarDados(); }
 
-    function atualizarTituloMes() {
+    function atualizarTituloMes(nomeBimestre) {
         if(mesAtual) {
             const [ano, mes] = mesAtual.split('-');
             const nomeMes = mesesExtenso[parseInt(mes) - 1];
-            document.getElementById('titulo-mes-atual').innerText = `Turma: ${turmaAtual} - ${nomeMes} / ${ano}`;
+            if (!nomeBimestre) nomeBimestre = getBimestreInfo(mesAtual).nome;
+            document.getElementById('titulo-mes-atual').innerText = `Turma: ${turmaAtual} - ${nomeMes} / ${ano} (${nomeBimestre})`;
         }
     }
 
@@ -516,8 +569,9 @@
         const inputNome = document.getElementById('novo-aluno');
         const nome = inputNome.value.trim();
         if (nome) {
-            if(!listaAlunosGlobais.includes(nome)) listaAlunosGlobais.push(nome);
-            if(!alunos.find(a => a.nome === nome)) alunos.push({ nome: nome, presencas: new Array(DIAS_LETIVOS).fill(false), notas: new Array(8).fill('') });
+            if(!alunos.find(a => a.nome === nome)) {
+                alunos.push({ nome: nome, presencas: new Array(DIAS_LETIVOS).fill(false), notas: new Array(8).fill('') });
+            }
             inputNome.value = '';
             salvarDados();
             renderizarTabela();
@@ -527,8 +581,7 @@
     }
 
     function removerAluno(index) {
-        if(confirm('Tem certeza que deseja remover este aluno deste mês?')) {
-            const nomeRemovido = alunos[index].nome;
+        if(confirm('Tem certeza que deseja remover este aluno? Ele será removido permanentemente de todos os meses desta turma.')) {
             alunos.splice(index, 1);
             salvarDados();
             renderizarTabela();
@@ -633,7 +686,7 @@
                     await salvarDados();
                     renderizarCabecalho();
                     renderizarTabela();
-                    alert("Backup importado e enviado para a nuvem com sucesso!");
+                    alert("Backup importado e sincronizado com a nuvem!");
                 } else {
                     alert("Arquivo de backup inválido.");
                 }
@@ -645,7 +698,7 @@
         event.target.value = '';
     }
 
-    // Inicialização
+    // Inicialização direta do mês atual
     const mesInicial = new Date().toISOString().slice(0, 7);
     document.getElementById('mes-referencia').value = mesInicial;
     carregarDados();
