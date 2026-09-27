@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diário de Classe - Presença e Notas</title>
+    <!-- Biblioteca do Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f4f8; 
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #1c3d5a;
+            margin-bottom: 5px;
+            font-weight: 700;
+        }
+        .mes-destaque {
+            text-align: center;
+            color: #d68102;
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-top: 0;
+            margin-bottom: 25px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .status-sync {
+            text-align: center;
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-top: -15px;
+            margin-bottom: 15px;
+        }
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.06); 
+        }
+        .controls, .export-controls, .backup-controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 25px;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .export-controls {
+            margin-top: 25px;
+            justify-content: flex-end;
+            gap: 15px;
+        }
+        .backup-controls {
+            justify-content: flex-start;
+            margin-bottom: 0;
+        }
+        
+        input[type="text"]#novo-aluno, input[type="month"], select#turma-referencia {
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            outline: none;
+            transition: all 0.3s ease;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.03);
+            background-color: white;
+        }
+        input[type="text"]#novo-aluno:focus, input[type="month"]:focus, select#turma-referencia:focus {
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+        }
+        
+        button {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #2980b9, #1c5986);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            box-shadow: 0 4px 6px rgba(41, 128, 185, 0.3);
+            transition: all 0.3s ease;
+        }
+        button:hover { 
+            background: linear-gradient(135deg, #3498db, #216a9e);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(41, 128, 185, 0.4);
+        }
+        button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(41, 128, 185, 0.3);
+        }
+        
+        .btn-danger { 
+            background: linear-gradient(135deg, #e74c3c, #c0392b); 
+            padding: 6px 12px; 
+            box-shadow: 0 3px 5px rgba(231, 76, 60, 0.3);
+        }
+        .btn-danger:hover { background: linear-gradient(135deg, #ff6b6b, #e74c3c); }
+        
+        .btn-excel { background: linear-gradient(135deg, #0097e6, #007bc2); }
+        .btn-excel:hover { background: linear-gradient(135deg, #00a8ff, #0097e6); }
+        
+        .btn-print { background: linear-gradient(135deg, #273c75, #192a56); }
+        .btn-print:hover { background: linear-gradient(135deg, #354e96, #273c75); }
+
+        .btn-backup { background: linear-gradient(135deg, #8e44ad, #732d91); }
+        .btn-backup:hover { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
+
+        .btn-import { background: linear-gradient(135deg, #f39c12, #d35400); }
+        .btn-import:hover { background: linear-gradient(135deg, #f1c40f, #f39c12); }
+
+        .table-responsive {
+            overflow-x: auto;
+            width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
+        }
+        table {
+            width: 100%;
+            border-collapse: separate; 
+            border-spacing: 0;
+            min-width: 1200px;
+            background-color: #fff;
+        }
+        th, td {
+            padding: 12px 8px;
+            text-align: center;
+            border-bottom: 1px solid #edf2f7; 
+            border-right: 1px solid #edf2f7;
+            transition: background-color 0.2s;
+        }
+        th:last-child, td:last-child { border-right: none; }
+        tr:last-child td { border-bottom: none; }
+        th {
+            background: linear-gradient(135deg, #2c3e50, #1a252f); 
+            color: white;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        tbody tr:nth-child(even) { background-color: #f8fafc; }
+        tbody tr:hover { background-color: #e2e8f0; }
+
+        .input-data-header, .eval-input {
+            width: 48px;
+            font-size: 13px;
+            padding: 6px;
+            text-align: center;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            background-color: #fff;
+            color: #334155;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
+            transition: all 0.3s ease;
+        }
+        .input-data-header:focus, .eval-input:focus {
+            border-color: #3498db;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2), inset 0 1px 2px rgba(0,0,0,0.06);
+        }
+
+        .container-data {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            cursor: pointer;
+        }
+        .date-hidden {
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .print-only { display: none; }
+
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #2980b9; 
+            transition: transform 0.2s ease;
+        }
+        input[type="checkbox"]:hover { transform: scale(1.2); }
+
+        .nome-aluno { text-align: left; min-width: 150px; font-weight: 600; color: #1e293b; padding-left: 15px; }
+        .col-faltas { font-weight: bold; color: #c0392b; background-color: #fdedec; }
+        tbody tr:nth-child(even) .col-faltas { background-color: #fadbd8; }
+        .media-aprovado { color: #10b981; font-weight: bold; }
+        .media-reprovado { color: #ef4444; font-weight: bold; }
+
+        @media print {
+            body { background-color: #fff; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .container { box-shadow: none; padding: 0; max-width: 100%; }
+            .controls, .export-controls, .backup-controls, .col-acoes, .status-sync { display: none !important; }
+            .mes-destaque { color: #000; font-size: 14pt; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 10px; }
+            h1 { font-size: 16pt; color: #000; margin-bottom: 0; }
+            table { min-width: 100%; font-size: 10pt; border-collapse: collapse; box-shadow: none; }
+            
+            th, td { border: 1px solid #000 !important; padding: 2px !important; color: #000; }
+            th { background: #f0f0f0 !important; color: #000 !important; }
+            tr { page-break-inside: avoid; }
+            
+            th.dia, th.th-vertical { 
+                height: 105px; 
+                vertical-align: middle; 
+                text-align: center;
+            }
+
+            .container-data {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100%;
+                width: 100%;
+            }
+            
+            .screen-only { display: none !important; }
+            .date-hidden { display: none !important; }
+            
+            .print-only { 
+                display: inline-flex !important; 
+                writing-mode: vertical-rl; 
+                transform: rotate(180deg);
+                align-items: center;
+                justify-content: center;
+                font-weight: bold;
+                font-size: 10pt;
+                height: 95px;
+                color: black;
+                margin: 0 auto;
+            }
+            
+            .texto-vertical {
+                writing-mode: vertical-rl; 
+                transform: rotate(180deg);
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto;
+                height: 95px;
+            }
+            
+            input[type="number"] { border: none; background: transparent; width: 100%; padding: 0; text-align: center; color: black !important; font-weight: bold; font-size: 10pt; box-shadow: none; }
+            input[type="checkbox"] { width: 14px; height: 14px; accent-color: black; margin: 0; padding: 0; }
+            .table-responsive { overflow-x: visible; box-shadow: none; margin-top: 0; }
+            @page { size: A4 landscape; margin: 10mm; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Diário de Classe</h1>
+    <div class="mes-destaque" id="titulo-mes-atual">Carregando diário...</div>
+    <div class="status-sync" id="status-sync">● Conectado ao Supabase</div>
+    
+    <div class="controls">
+        <div>
+            <label for="turma-referencia"><strong>Turma: </strong></label>
+            <select id="turma-referencia" onchange="mudarTurma()">
+                <option value="5º Ano A">5º Ano A</option>
+                <option value="5º Ano B">5º Ano B</option>
+                <option value="6º Ano C">6º Ano C</option>
+                <option value="8º Ano C">8º Ano C</option>
+            </select>
+        </div>
+
+        <div>
+            <input type="text" id="novo-aluno" placeholder="Nome do Aluno">
+            <button onclick="adicionarAluno()">Adicionar Aluno</button>
+        </div>
+        <div>
+            <label for="mes-referencia"><strong>Mês/Ano: </strong></label>
+            <input type="month" id="mes-referencia" onchange="mudarMes()">
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table>
+            <thead id="cabecalho-tabela"></thead>
+            <tbody id="tabela-alunos"></tbody>
+        </table>
+    </div>
+
+    <div class="export-controls">
+        <div class="backup-controls">
+            <button class="btn-backup" onclick="exportarBackup()">💾 Salvar Backup dos Dados</button>
+            <button class="btn-import" onclick="document.getElementById('import-file').click()">📂 Carregar Backup</button>
+            <input type="file" id="import-file" style="display: none;" accept=".json" onchange="importarBackup(event)">
+        </div>
+        <div>
+            <button class="btn-excel" onclick="exportarExcel()">📥 Exportar Excel (Mês Atual)</button>
+            <button class="btn-print" onclick="window.print()">🖨️ Imprimir PDF</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- CONFIGURAÇÃO DO SUPABASE ---
+    const SUPABASE_URL = "https://qpnpyysmvrjnblomfefm.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_NiNHqAxuVWC49yTkMJuH8Q_0BHL48C4";
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const DIAS_LETIVOS = 23;
+    const mesesExtenso = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    
+    let mesAtual = "";
+    let turmaAtual = "5º Ano A";
+    let alunos = [];
+    let datasColunas = [];
+    let listaAlunosGlobais = [];
+
+    function setStatus(msg, cor = "#64748b") {
+        const el = document.getElementById('status-sync');
+        if (el) {
+            el.innerText = msg;
+            el.style.color = cor;
+        }
+    }
+
+    function formatarDataCurta(iso) {
+        if (!iso || !iso.includes('-')) return iso;
+        const partes = iso.split('-');
+        return `${partes[2]}/${partes[1]}`;
+    }
+
+    function formatarDataCompleta(iso) {
+        if (!iso || !iso.includes('-')) return iso;
+        const partes = iso.split('-');
+        return `${partes[2]}/${partes[1]}/${partes[0]}`;
+    }
+
+    function getColunasAvaliacao() {
+        if (turmaAtual === "5º Ano A" || turmaAtual === "5º Ano B") {
+            return ['Português', 'Matemática', 'Ciências', 'História', 'Geografia', 'Artes', 'Ed. Física', 'Ens. Religioso'];
+        }
+        return ['Av. 1', 'Av. 2', 'Av. 3', 'Av. 4'];
+    }
+
+    function mostrarMedia() {
+        return !(turmaAtual === "5º Ano A" || turmaAtual === "5º Ano B");
+    }
+
+    // Carregar dados direto da nuvem
+    async function carregarDados() {
+        turmaAtual = document.getElementById('turma-referencia').value;
+        mesAtual = document.getElementById('mes-referencia').value;
+        if (!mesAtual) return;
+
+        setStatus("Sincronizando com a nuvem...", "#d68102");
+        const idRegistro = `${turmaAtual}_${mesAtual}`;
+
+        try {
+            const { data, error } = await db
+                .from('diarios')
+                .select('*')
+                .eq('id', idRegistro)
+                .maybeSingle();
+
+            if (error) throw error;
+
+            if (data) {
+                datasColunas = data.datas_colunas || new Array(DIAS_LETIVOS).fill('');
+                alunos = data.alunos || [];
+            } else {
+                datasColunas = new Array(DIAS_LETIVOS).fill('');
+                alunos = listaAlunosGlobais.map(nome => ({
+                    nome: nome,
+                    presencas: new Array(DIAS_LETIVOS).fill(false),
+                    notas: new Array(8).fill('')
+                }));
+            }
+
+            atualizarTituloMes();
+            renderizarCabecalho();
+            renderizarTabela();
+            setStatus("● Dados sincronizados na nuvem", "#10b981");
+        } catch (err) {
+            console.error(err);
+            setStatus("Erro ao conectar ao Supabase (verifique as permissões SQL)", "#ef4444");
+        }
+    }
+
+    // Salvar dados na nuvem automaticamente
+    async function salvarDados() {
+        const idRegistro = `${turmaAtual}_${mesAtual}`;
+        setStatus("Salvando na nuvem...", "#d68102");
+
+        try {
+            const { error } = await db
+                .from('diarios')
+                .upsert({
+                    id: idRegistro,
+                    turma: turmaAtual,
+                    mes: mesAtual,
+                    datas_colunas: datasColunas,
+                    alunos: alunos,
+                    updated_at: new Date().toISOString()
+                });
+
+            if (error) throw error;
+            setStatus("● Alterações salvas na nuvem", "#10b981");
+        } catch (err) {
+            console.error(err);
+            setStatus("Falha ao salvar no banco", "#ef4444");
+        }
+    }
+
+    function mudarTurma() { carregarDados(); }
+    function mudarMes() { if (document.getElementById('mes-referencia').value) carregarDados(); }
+
+    function atualizarTituloMes() {
+        if(mesAtual) {
+            const [ano, mes] = mesAtual.split('-');
+            const nomeMes = mesesExtenso[parseInt(mes) - 1];
+            document.getElementById('titulo-mes-atual').innerText = `Turma: ${turmaAtual} - ${nomeMes} / ${ano}`;
+        }
+    }
+
+    function atualizarDataColuna(index, valor) {
+        datasColunas[index] = valor;
+        salvarDados();
+        renderizarCabecalho();
+        renderizarTabela();
+    }
+
+    function renderizarCabecalho() {
+        const thead = document.getElementById('cabecalho-tabela');
+        let htmlDias = '';
+        
+        for (let i = 0; i < DIAS_LETIVOS; i++) {
+            const valorAtual = datasColunas[i] ? datasColunas[i] : '';
+            const exibicaoCurta = formatarDataCurta(valorAtual);
+            const exibicaoCompleta = valorAtual ? formatarDataCompleta(valorAtual) : '';
+            
+            htmlDias += `<th class="dia">
+                <div class="container-data" title="Clique para abrir o calendário. Dê duplo clique para apagar a data."
+                     onclick="try{this.querySelector('.date-hidden').showPicker();}catch(e){}"
+                     ondblclick="atualizarDataColuna(${i}, '')">
+                    <input type="text" class="input-data-header screen-only" placeholder="D${i+1}" value="${exibicaoCurta}" readonly style="cursor: pointer; user-select: none;">
+                    <span class="print-only">${exibicaoCompleta}</span>
+                    <input type="date" class="date-hidden" value="${valorAtual}" onchange="atualizarDataColuna(${i}, this.value)">
+                </div>
+            </th>`;
+        }
+        
+        let colunas = getColunasAvaliacao();
+        let htmlColunas = '';
+        colunas.forEach(col => {
+            htmlColunas += `<th class="th-vertical"><span class="texto-vertical">${col}</span></th>`;
+        });
+
+        let htmlMedia = mostrarMedia() ? `<th class="th-vertical"><span class="texto-vertical">Média</span></th>` : '';
+
+        thead.innerHTML = `<tr>
+            <th>Nome do Aluno</th>
+            ${htmlDias}
+            <th class="th-vertical" title="Total de Faltas"><span class="texto-vertical">Faltas</span></th>
+            ${htmlColunas}
+            ${htmlMedia}
+            <th class="col-acoes">Ações</th>
+        </tr>`;
+    }
+
+    function renderizarTabela() {
+        const tbody = document.getElementById('tabela-alunos');
+        tbody.innerHTML = '';
+        
+        let colunas = getColunasAvaliacao();
+
+        alunos.forEach((aluno, index) => {
+            const media = calcularMedia(aluno.notas);
+            const classeMedia = media >= 6 ? 'media-aprovado' : (media > 0 ? 'media-reprovado' : '');
+            const totalFaltas = aluno.presencas.filter((p, i) => p === false && datasColunas[i] && datasColunas[i].trim() !== '').length;
+
+            let checkboxesPresenca = '';
+            for (let i = 0; i < DIAS_LETIVOS; i++) {
+                const isChecked = aluno.presencas[i] ? 'checked' : '';
+                checkboxesPresenca += `<td class="dia"><input type="checkbox" onchange="atualizarPresenca(${index}, ${i}, this.checked)" ${isChecked}></td>`;
+            }
+
+            let htmlInputsNotas = '';
+            for (let i = 0; i < colunas.length; i++) {
+                let valorNota = aluno.notas[i] !== undefined ? aluno.notas[i] : '';
+                htmlInputsNotas += `<td><input type="number" class="eval-input" min="0" max="10" step="0.5" value="${valorNota}" onchange="atualizarNota(${index}, ${i}, this.value)"></td>`;
+            }
+
+            let htmlMedia = mostrarMedia() ? `<td class="${classeMedia}">${media ? media.toFixed(1) : '-'}</td>` : '';
+
+            tbody.innerHTML += `
+                <tr>
+                    <td class="nome-aluno">${aluno.nome}</td>
+                    ${checkboxesPresenca}
+                    <td class="col-faltas">${totalFaltas}</td>
+                    ${htmlInputsNotas}
+                    ${htmlMedia}
+                    <td class="col-acoes"><button class="btn-danger" onclick="removerAluno(${index})">X</button></td>
+                </tr>
+            `;
+        });
+    }
+
+    function adicionarAluno() {
+        const inputNome = document.getElementById('novo-aluno');
+        const nome = inputNome.value.trim();
+        if (nome) {
+            if(!listaAlunosGlobais.includes(nome)) listaAlunosGlobais.push(nome);
+            if(!alunos.find(a => a.nome === nome)) alunos.push({ nome: nome, presencas: new Array(DIAS_LETIVOS).fill(false), notas: new Array(8).fill('') });
+            inputNome.value = '';
+            salvarDados();
+            renderizarTabela();
+        } else {
+            alert('Por favor, digite o nome do aluno.');
+        }
+    }
+
+    function removerAluno(index) {
+        if(confirm('Tem certeza que deseja remover este aluno deste mês?')) {
+            const nomeRemovido = alunos[index].nome;
+            alunos.splice(index, 1);
+            salvarDados();
+            renderizarTabela();
+        }
+    }
+
+    function atualizarNota(indexAluno, indexNota, valor) {
+        alunos[indexAluno].notas[indexNota] = valor;
+        salvarDados();
+        renderizarTabela();
+    }
+
+    function atualizarPresenca(indexAluno, indexDia, valor) {
+        alunos[indexAluno].presencas[indexDia] = valor;
+        salvarDados();
+        renderizarTabela(); 
+    }
+
+    function calcularMedia(notas) {
+        let soma = 0, cont = 0;
+        notas.forEach(nota => { if (nota !== '') { soma += parseFloat(nota); cont++; } });
+        return cont > 0 ? (soma / cont) : 0;
+    }
+
+    function exportarExcel() {
+        let csv = 'Nome do Aluno;';
+        for (let i = 0; i < DIAS_LETIVOS; i++) {
+            const dataIso = datasColunas[i];
+            const tituloData = (dataIso && dataIso.trim() !== '') ? formatarDataCompleta(dataIso) : `Dia ${i+1}`;
+            csv += `${tituloData};`;
+        }
+        
+        csv += 'Faltas;';
+        let colunas = getColunasAvaliacao();
+        colunas.forEach(col => { csv += `${col};`; });
+        
+        if (mostrarMedia()) {
+            csv += 'Media Final';
+        }
+        csv += '\n';
+
+        alunos.forEach(aluno => {
+            let linha = `${aluno.nome};`;
+            aluno.presencas.forEach((p, i) => { 
+                const diaPreenchido = datasColunas[i] && datasColunas[i].trim() !== '';
+                if (!diaPreenchido) { linha += '-;'; } 
+                else { linha += p ? 'P;' : 'F;'; }
+            });
+            const totalFaltas = aluno.presencas.filter((p, i) => p === false && datasColunas[i] && datasColunas[i].trim() !== '').length;
+            linha += `${totalFaltas};`;
+            
+            for (let i = 0; i < colunas.length; i++) {
+                let n = aluno.notas[i];
+                linha += `${n !== undefined && n !== '' ? String(n).replace('.', ',') : ''};`;
+            }
+            
+            if (mostrarMedia()) {
+                const media = calcularMedia(aluno.notas);
+                linha += media ? `${media.toFixed(1).replace('.', ',')}` : '-';
+            }
+            linha += '\n';
+            csv += linha;
+        });
+
+        const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `Diario_Classe_${turmaAtual}_${mesAtual}.csv`;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function exportarBackup() {
+        const backupData = {
+            datasColunas: datasColunas,
+            alunos: alunos,
+            turma: turmaAtual,
+            mes: mesAtual
+        };
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData));
+        const link = document.createElement("a");
+        link.href = dataStr;
+        link.download = `backup_${turmaAtual}_${mesAtual}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function importarBackup(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const dadosImportados = JSON.parse(e.target.result);
+                if (dadosImportados.alunos && dadosImportados.datasColunas) {
+                    alunos = dadosImportados.alunos;
+                    datasColunas = dadosImportados.datasColunas;
+                    await salvarDados();
+                    renderizarCabecalho();
+                    renderizarTabela();
+                    alert("Backup importado e enviado para a nuvem com sucesso!");
+                } else {
+                    alert("Arquivo de backup inválido.");
+                }
+            } catch (error) {
+                alert("Erro ao ler o arquivo de backup.");
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = '';
+    }
+
+    // Inicialização
+    const mesInicial = new Date().toISOString().slice(0, 7);
+    document.getElementById('mes-referencia').value = mesInicial;
+    carregarDados();
+</script>
+
+</body>
+</html>
