@@ -361,7 +361,7 @@
         return !(turmaAtual === "5º Ano A" || turmaAtual === "5º Ano B");
     }
 
-    // Carregar dados estruturados (Lista Global, Presenças do Mês, Notas do Bimestre)
+    // Carregar dados estruturados
     async function carregarDados() {
         turmaAtual = document.getElementById('turma-referencia').value;
         mesAtual = document.getElementById('mes-referencia').value;
@@ -383,24 +383,43 @@
                 db.from('diarios').select('*').eq('id', idBimestre).maybeSingle()
             ]);
 
-            if (resLista.error) throw resLista.error;
-            if (resMes.error) throw resMes.error;
-            if (resBimestre.error) throw resBimestre.error;
+            // Trata possíveis falhas de conexão
+            if (resLista.error && resLista.error.code !== 'PGRST116') throw resLista.error;
+            if (resMes.error && resMes.error.code !== 'PGRST116') throw resMes.error;
+            if (resBimestre.error && resBimestre.error.code !== 'PGRST116') throw resBimestre.error;
 
             let nomesGlobais = resLista.data?.alunos?.map(a => a.nome) || [];
             let dadosMes = resMes.data?.alunos || [];
             let dadosBimestre = resBimestre.data?.alunos || [];
 
-            // Compatibilidade com dados antigos salvos anteriormente
-            if (nomesGlobais.length === 0 && dadosMes.length > 0) {
-                nomesGlobais = dadosMes.map(a => a.nome);
-                if (dadosBimestre.length === 0) dadosBimestre = dadosMes; 
+            let isMigracao = false;
+
+            // SISTEMA DE SEGURANÇA: Se a Lista Global estiver vazia (porque falhou a criar da primeira vez)
+            // ele recupera os nomes do mês atual ou de qualquer mês que já tenha sido salvo desta turma.
+            if (nomesGlobais.length === 0) {
+                if (dadosMes.length > 0) {
+                    nomesGlobais = dadosMes.map(a => a.nome);
+                    isMigracao = true;
+                } else {
+                    const { data: outroMes } = await db.from('diarios')
+                        .select('alunos')
+                        .eq('turma', turmaAtual)
+                        .neq('mes', 'GLOBAL')
+                        .not('alunos', 'is', 'null')
+                        .limit(1)
+                        .maybeSingle();
+
+                    if (outroMes && outroMes.alunos && outroMes.alunos.length > 0) {
+                        nomesGlobais = outroMes.alunos.map(a => a.nome);
+                        isMigracao = true;
+                    }
+                }
             }
 
             datasColunas = resMes.data?.datas_colunas || new Array(DIAS_LETIVOS).fill('');
             alunos = [];
 
-            // Mesclar dados
+            // A Lista Global é QUEM MANDA! Só entra na tabela quem está nela.
             nomesGlobais.forEach(nome => {
                 const alunoMes = dadosMes.find(a => a.nome === nome);
                 const alunoBim = dadosBimestre.find(a => a.nome === nome);
@@ -416,13 +435,19 @@
             renderizarCabecalho();
             renderizarTabela();
             setStatus("● Dados sincronizados na nuvem", "#10b981");
+
+            // Força a gravação imediata se ele teve que recuperar a Lista Global
+            if (isMigracao && alunos.length > 0) {
+                await salvarDados();
+            }
+
         } catch (err) {
             console.error(err);
             setStatus("Erro ao conectar ao Supabase", "#ef4444");
         }
     }
 
-    // Salvar separando Listas, Presenças (Mês) e Notas (Bimestre)
+    // Salvar garantindo todos os campos
     async function salvarDados() {
         const anoAtual = mesAtual.split('-')[0];
         const bimInfo = getBimestreInfo(mesAtual);
@@ -434,21 +459,21 @@
         setStatus("A guardar na nuvem...", "#d68102");
 
         try {
+            // Arrays vazios adicionados ao datas_colunas das listas que não o usam, para evitar que o Supabase bloqueie
             const payloadLista = {
-                id: idLista, turma: turmaAtual, mes: 'GLOBAL',
+                id: idLista, turma: turmaAtual, mes: 'GLOBAL', datas_colunas: [],
                 alunos: alunos.map(a => ({ nome: a.nome })),
                 updated_at: new Date().toISOString()
             };
 
             const payloadMes = {
-                id: idMes, turma: turmaAtual, mes: mesAtual,
-                datas_colunas: datasColunas,
+                id: idMes, turma: turmaAtual, mes: mesAtual, datas_colunas: datasColunas,
                 alunos: alunos.map(a => ({ nome: a.nome, presencas: a.presencas })),
                 updated_at: new Date().toISOString()
             };
 
             const payloadBimestre = {
-                id: idBimestre, turma: turmaAtual, mes: `BIMESTRE_${bimInfo.id}`,
+                id: idBimestre, turma: turmaAtual, mes: `BIMESTRE_${bimInfo.id}`, datas_colunas: [],
                 alunos: alunos.map(a => ({ nome: a.nome, notas: a.notas })),
                 updated_at: new Date().toISOString()
             };
