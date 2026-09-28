@@ -120,6 +120,8 @@
 
         .table-responsive {
             overflow-x: auto;
+            overflow-y: auto;
+            max-height: 65vh;
             width: 100%;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
@@ -150,10 +152,12 @@
         tbody tr:nth-child(even) { background-color: #f8fafc; }
         tbody tr:hover { background-color: #e2e8f0; }
 
+        /* Ajuste do CSS das datas para resolver o desalinhamento */
         .input-data-header, .eval-input {
-            width: 48px;
+            width: 54px; 
+            box-sizing: border-box; 
             font-size: 13px;
-            padding: 6px;
+            padding: 6px 2px; 
             text-align: center;
             border: 1px solid #cbd5e1;
             border-radius: 4px;
@@ -170,10 +174,15 @@
 
         .container-data {
             position: relative;
-            display: inline-block;
-            width: 48px;
+            display: flex; 
+            justify-content: center;
+            align-items: center;
+            width: 100%; 
+            min-width: 54px;
             cursor: pointer;
+            margin: 0 auto;
         }
+        
         .date-hidden {
             position: absolute;
             left: 0;
@@ -194,19 +203,39 @@
         }
         input[type="checkbox"]:hover { transform: scale(1.2); }
 
-        .nome-aluno { text-align: left; min-width: 150px; font-weight: 600; color: #1e293b; padding-left: 15px; }
         .col-faltas { font-weight: bold; color: #c0392b; background-color: #fdedec; }
         tbody tr:nth-child(even) .col-faltas { background-color: #fadbd8; }
         .media-aprovado { color: #10b981; font-weight: bold; }
         .media-reprovado { color: #ef4444; font-weight: bold; }
 
-        /* --- CONGELAR COLUNA DOS NOMES --- */
+        /* --- CONGELAR COLUNA DOS NOMES E CABEÇALHO --- */
         tbody tr { background-color: #fff; } 
+        
+        /* Congela o cabeçalho no topo */
+        thead th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        /* Congela a coluna dos nomes à esquerda */
         th:first-child, .nome-aluno {
             position: sticky;
             left: 0;
+            text-align: left; 
+            min-width: 150px; 
+            font-weight: 600; 
+            color: #1e293b; 
+            padding-left: 15px;
         }
-        th:first-child { z-index: 10; }
+        
+        /* O canto superior esquerdo precisa ficar acima do topo e da lateral */
+        thead th:first-child { 
+            z-index: 15; 
+            color: white; 
+        }
+        
+        /* Mantém o nome por cima das outras colunas com a sombra de limite */
         .nome-aluno {
             z-index: 5;
             background-color: inherit; 
@@ -267,11 +296,11 @@
             
             input[type="number"] { border: none; background: transparent; width: 100%; padding: 0; text-align: center; color: black !important; font-weight: bold; font-size: 10pt; box-shadow: none; }
             input[type="checkbox"] { width: 14px; height: 14px; accent-color: black; margin: 0; padding: 0; }
-            .table-responsive { overflow-x: visible; box-shadow: none; margin-top: 0; }
+            .table-responsive { overflow-x: visible; box-shadow: none; margin-top: 0; max-height: none; }
             @page { size: A4 landscape; margin: 10mm; }
 
             /* Desativa o congelamento na impressão */
-            th:first-child, .nome-aluno {
+            thead th, th:first-child, .nome-aluno {
                 position: static;
                 box-shadow: none;
             }
@@ -413,8 +442,6 @@
 
             let isMigracao = false;
 
-            // SISTEMA DE SEGURANÇA: Se a Lista Global estiver vazia (porque falhou a criar da primeira vez)
-            // ele recupera os nomes do mês atual ou de qualquer mês que já tenha sido salvo desta turma.
             if (nomesGlobais.length === 0) {
                 if (dadosMes.length > 0) {
                     nomesGlobais = dadosMes.map(a => a.nome);
@@ -438,7 +465,6 @@
             datasColunas = resMes.data?.datas_colunas || new Array(DIAS_LETIVOS).fill('');
             alunos = [];
 
-            // A Lista Global é QUEM MANDA! Só entra na tabela quem está nela.
             nomesGlobais.forEach(nome => {
                 const alunoMes = dadosMes.find(a => a.nome === nome);
                 const alunoBim = dadosBimestre.find(a => a.nome === nome);
@@ -455,7 +481,6 @@
             renderizarTabela();
             setStatus("● Dados sincronizados na nuvem", "#10b981");
 
-            // Força a gravação imediata se ele teve que recuperar a Lista Global
             if (isMigracao && alunos.length > 0) {
                 await salvarDados();
             }
@@ -466,7 +491,6 @@
         }
     }
 
-    // Salvar garantindo todos os campos
     async function salvarDados() {
         const anoAtual = mesAtual.split('-')[0];
         const bimInfo = getBimestreInfo(mesAtual);
@@ -478,7 +502,6 @@
         setStatus("A guardar na nuvem...", "#d68102");
 
         try {
-            // Arrays vazios adicionados ao datas_colunas das listas que não o usam, para evitar que o Supabase bloqueie
             const payloadLista = {
                 id: idLista, turma: turmaAtual, mes: 'GLOBAL', datas_colunas: [],
                 alunos: alunos.map(a => ({ nome: a.nome })),
